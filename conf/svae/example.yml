@@ -1,0 +1,104 @@
+# Save path
+save_path: ckpts/16khz_40hz_5544_kl1e-2_vae64_bsz64_wavlm_23
+# resume: true
+# tag: latest
+# Model setup
+DAC.sample_rate: 16000
+DAC.encoder_dim: 64
+DAC.encoder_rates: [4, 4, 5, 5]
+DAC.decoder_dim: 1024
+DAC.decoder_rates: [5, 5, 4, 4]
+DAC.vae_dim: 64
+DAC.decoder_type: bigvgan
+DAC.bigvgan_conf: conf/bigvgan_conf/bigvgan_v2_16khz_40hz_base_vae64.json
+DAC.distill: true
+DAC.attn_proj: true
+DAC.sampling_ratios: [0,1]
+
+# Discriminator
+Discriminator.sample_rate: 16000
+Discriminator.rates: []
+Discriminator.periods: [2, 3, 5, 7, 11]
+Discriminator.fft_sizes: [2048, 1024, 512]
+Discriminator.bands:
+  - [0.0, 0.1]
+  - [0.1, 0.25]
+  - [0.25, 0.5]
+  - [0.5, 0.75]
+  - [0.75, 1.0]
+
+# Optimization
+AdamW.betas: [0.8, 0.99]
+AdamW.lr: 0.0001
+ExponentialLR.gamma: 0.999996
+
+amp: false
+val_batch_size: 8
+device: cuda
+num_iters: 600001
+save_iters: [10, 10000, 100000,200000,300000,400000,500000,600000]
+valid_freq: 1000
+sample_freq: 10000
+num_workers: 96
+val_idx: [0, 1, 2, 3, 4, 5, 6, 7]
+seed: 0
+disc_warmup_step: 0
+use_kl_warmup: false
+kl_warmup_ratio: 0.4
+kl_start_weight: 0.00001
+lambdas:
+  mel/loss: 15.0
+  adv/feat_loss: 2.0
+  adv/gen_loss: 1.0
+  vae/kl_loss: 0.01
+  vae/proj_loss: 1.0
+
+# Transforms
+build_transform.preprocess:
+  - Identity
+build_transform.augment_prob: 0.0
+build_transform.augment:
+  - Identity
+build_transform.postprocess:
+  - Identity
+
+# Loss setup
+MultiScaleSTFTLoss.window_lengths: [2048, 512]
+MelSpectrogramLoss.n_mels: [5, 10, 20, 40, 80, 160, 320]
+MelSpectrogramLoss.window_lengths: [32, 64, 128, 256, 512, 1024, 2048]
+MelSpectrogramLoss.mel_fmin: [0, 0, 0, 0, 0, 0, 0]
+MelSpectrogramLoss.mel_fmax: [null, null, null, null, null, null, null]
+MelSpectrogramLoss.pow: 1.0
+MelSpectrogramLoss.clamp_eps: 1.0e-5
+MelSpectrogramLoss.mag_weight: 0.0
+
+# Data
+batch_size: 24
+train/AudioDataset.duration: 3.0
+train/AudioDataset.n_examples: 10000000
+train/AudioDataset.guidance_path: 
+  - <YOUR_PATH>/libritts/wavlm-features/dev-clean # SSL features path
+
+val/AudioDataset.duration: 5.0
+val/build_transform.augment_prob: 1.0
+val/AudioDataset.n_examples: 250
+
+test/AudioDataset.duration: 10.0
+test/build_transform.augment_prob: 1.0
+test/AudioDataset.n_examples: 1000
+
+AudioLoader.shuffle: true
+AudioDataset.without_replacement: true
+
+
+train/build_dataset.folders:
+  speech:
+    - <YOUR_PATH>/libritts/v1/dev-clean
+val/build_dataset.folders:
+  speech:
+    - <YOUR_PATH>/libritts/v1/test-clean
+
+test/build_dataset.folders:
+  speech:
+    - <YOUR_PATH>/libritts/v1/test-clean
+
