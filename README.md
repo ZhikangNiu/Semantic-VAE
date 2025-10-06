@@ -15,15 +15,33 @@
 </p>
 
 <p align="center">
-  <sup>1</sup>MoE Key Lab of Artificial Intelligence, X-LANCE Lab, School of Computer Science, Shanghai Jiao Tong University, China
+  <sup>1</sup>MoE Key Lab of Artificial Intelligence, X-LANCE Lab, School of Computer Science, 
+  <br> Shanghai Jiao Tong University, China
   <sup>2</sup>Shanghai Innovation Institute, China <br>
   <sup>3</sup>The Chinese University of Hong Kong, China <br>
   <sup>4</sup>Korea Advanced Institute of Science and Technology, South Korea 
   <sup>5</sup>Geely, China &nbsp;&nbsp; <br>
 </p>
 
+<div align="center">
+  <a href="https://github.com/ZhikangNiu/Semantic-VAE">
+    <img src="https://img.shields.io/badge/Python-3.10-brightgreen" alt="Python">
+  </a>
+  <a href="https://arxiv.org/abs/2509.22167">
+    <img src="https://img.shields.io/badge/arXiv-2509.22167-b31b1b.svg?logo=arXiv" alt="arXiv">
+  </a>
+  <a href="https://huggingface.co/zkniu/Semantic-VAE">
+    <img src="https://img.shields.io/badge/Hugging%20Face-Models-FF6B6B.svg" alt="Models">
+  </a>
+</div>
+
 ## 📜 News
 🚀 [2025.10] We will release all the code and pre-trained models to promote the research of semantic-aligned VAE for speech synthesis after cleaning the code.
+
+## ✅ TODO
+- [ ] Release pre-trained Semantic-VAE models on Hugging Face  
+- [ ] Write detailed documentation for YAML configuration options  
+- [ ] Integrate Semantic-VAE into popular TTS frameworks (e.g., VITS, F5-TTS)
 
 
 ## 💡 Highlights
@@ -31,7 +49,48 @@
 2. **Plug and Play for VAE-based TTS**: Semantic-VAE can be easily integrated into existing VAE-based TTS models, providing a simple yet effective way to improve their performance.
 3. **Accelerated Training**: Semantic-VAE significantly accelerates the convergence of VAE-based TTS models while maintaining the same inference speed as the original models.
 4. **High-Quality Speech Generation**: Semantic-VAE achieves high-quality speech generation with improved intelligibility and speaker similarity, making it suitable for various TTS applications.
-5. **Open-Source**: Semantic-VAE is open-sourced to promote research in the field of speech synthesis and to provide a baseline for future work.
+
+## 🛠️ Usage
+### 1. Install environment and dependencies
+```bash
+# We recommend using conda to create a new environment.
+conda create -n semantic-vae python=3.11
+conda activate semantic-vae
+
+git clone https://github.com/ZhikangNiu/Semantic-VAE.git
+cd Semantic-VAE
+
+# Install PyTorch >= 2.2.0, e.g.,
+pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+
+# Install audiotools: https://github.com/descriptinc/audiotools
+pip install git+https://github.com/descriptinc/audiotools
+
+# Install editable version of Semantic-VAE
+pip install -e .
+```
+
+### 2. Feature Extraction
+We use pre-trained SSL models (WavLM) to extract features for semantic alignment. You can use the following command to extract features after preparing the dataset.
+```bash
+bash extract_ssl_features.sh
+```
+
+### 3. Train the model
+If you want to train your custom VAE, simply modify the `conf/svae/example.yml` file as a template and specify the path to your customized .yml file. And our training command is as follow (you can also check `train.sh`):
+```shell
+torchrun --nproc_per_node 8 scripts/train.py --args.load custom_yml_path
+```
 
 ## ❤️ Acknowledgments
 Our work is built upon the following open-source projects [descript-audio-codec](https://github.com/descriptinc/descript-audio-codec), [F5-TTS](https://github.com/SWivid/F5-TTS) and [BigVGAN](https://github.com/NVIDIA/BigVGAN/tree/main). Thanks to the authors for their great work, and if you have any questions, you can first check them on their respective issues.
+
+## ✒️ Citation and License
+Our code is released under MIT License. If our work and codebase is useful for you, please cite as:
+```
+@article{niu2025semantic,
+  title={Semantic-VAE: Semantic-Alignment Latent Representation for Better Speech Synthesis},
+  author={Niu, Zhikang and Hu, Shujie and Choi, Jeongsoo and Chen, Yushen and Chen, Peining and Zhu, Pengcheng and Yang, Yunting and Zhang, Bowen and Zhao, Jian and Wang, Chunhui and others},
+  journal={arXiv preprint arXiv:2509.22167},
+  year={2025}
+}
