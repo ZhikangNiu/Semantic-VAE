@@ -1,17 +1,20 @@
 # Implementation adapted from https://github.com/EdwardDixon/snake under the MIT license.
 #   LICENSE is in incl_licenses directory.
-
 import torch
-from torch import nn, sin, pow
+from torch import nn
+from torch import pow
+from torch import sin
 from torch.nn import Parameter
+
 
 @torch.jit.script
 def snake(x, alpha):
     x = x + (alpha + 1e-9).reciprocal() * torch.sin(alpha * x).pow(2)
     return x
 
+
 @torch.jit.script
-def snakebeta(x, alpha,beta,alpha_logscale):
+def snakebeta(x, alpha, beta, alpha_logscale):
     alpha = alpha.unsqueeze(0).unsqueeze(-1)  # Line up with x to [B, C, T]
     beta = beta.unsqueeze(0).unsqueeze(-1)
     if alpha_logscale:
@@ -19,6 +22,7 @@ def snakebeta(x, alpha,beta,alpha_logscale):
         beta = torch.exp(beta)
     x = x + (beta + 1e-9).reciprocal() * torch.sin(alpha * x).pow(2)
     return x
+
 
 class Snake(nn.Module):
     """
@@ -138,7 +142,8 @@ class SnakeBeta(nn.Module):
         #     alpha = torch.exp(alpha)
         #     beta = torch.exp(beta)
         # x = x + (1.0 / (beta + self.no_div_by_zero)) * pow(sin(x * alpha), 2)
-        x = snakebeta(x,alpha=self.alpha,beta=self.beta,alpha_logscale=self.alpha_logscale[0])
-        
+        x = snakebeta(
+            x, alpha=self.alpha, beta=self.beta, alpha_logscale=self.alpha_logscale[0]
+        )
 
         return x

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import warnings
@@ -13,11 +14,14 @@ from audiotools.data import transforms
 from audiotools.ml.decorators import timer
 from audiotools.ml.decorators import Tracker
 from audiotools.ml.decorators import when
-from torch.utils.tensorboard import SummaryWriter
-import json
 from ema_pytorch import EMA
+from torch.utils.tensorboard import SummaryWriter
+
 import dac
-from dac.data.datasets import AudioDataset, AudioLoader,ConcatDataset
+from dac.data.datasets import AudioDataset
+from dac.data.datasets import AudioLoader
+from dac.data.datasets import ConcatDataset
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Enable cudnn autotuner to speed up training
@@ -28,6 +32,7 @@ torch.backends.cudnn.benchmark = bool(int(os.getenv("CUDNN_BENCHMARK", 1)))
 # Optimizers
 AdamW = argbind.bind(torch.optim.AdamW, "generator", "discriminator")
 Accelerator = argbind.bind(ml.Accelerator, without_prefix=True)
+
 
 @argbind.bind("generator", "discriminator")
 def ExponentialLR(optimizer, gamma: float = 1.0):
@@ -55,6 +60,7 @@ tfm = argbind.bind_module(transforms, "train", "val", filter_fn=filter_fn)
 # Loss
 filter_fn = lambda fn: hasattr(fn, "forward") and "Loss" in fn.__name__
 losses = argbind.bind_module(dac.nn.loss, filter_fn=filter_fn)
+
 
 def get_infinite_loader(dataloader):
     while True:
@@ -97,6 +103,7 @@ def build_dataset(
     dataset.transform = transform
     return dataset
 
+
 @dataclass
 class State:
     generator: DAC
@@ -118,28 +125,34 @@ class State:
 
     tracker: Tracker
 
+
 def save_metainfo(save_path):
     params = argbind.parse_args()
-    dac_params = {k.replace("DAC.", ""): v for k, v in params.items() if k.startswith("DAC.")}
-    disc_params = {k.replace("Discriminator.", ""): v for k, v in params.items() if k.startswith("Discriminator.")} 
-    decoder_params = read_json_file(params["DAC.bigvgan_conf"])
-    metainfo = {
-        "DAC": dac_params,
-        "Decoder":decoder_params
+    dac_params = {
+        k.replace("DAC.", ""): v for k, v in params.items() if k.startswith("DAC.")
     }
+    disc_params = {
+        k.replace("Discriminator.", ""): v
+        for k, v in params.items()
+        if k.startswith("Discriminator.")
+    }
+    decoder_params = read_json_file(params["DAC.bigvgan_conf"])
+    metainfo = {"DAC": dac_params, "Decoder": decoder_params}
     with open(Path(save_path) / "metainfo.json", "w") as f:
         metainfo["Discriminator"] = disc_params
         json.dump(metainfo, f, ensure_ascii=False)
-    
+
     with open(Path(save_path) / "config.json", "w") as f:
         metainfo["params"] = params
         metainfo["Discriminator"] = disc_params
         json.dump(params, f, indent=4, ensure_ascii=False)
 
+
 def read_json_file(metainfo_path):
-    with open(metainfo_path,"r") as f:
+    with open(metainfo_path, "r") as f:
         data = json.load(f)
     return data
+
 
 @argbind.bind(without_prefix=True)
 def load(
@@ -154,49 +167,57 @@ def load(
     generator = None
     discriminator = None
     ema_generator = None
-    
+
     if resume:
         ckpt_folder = Path(f"{save_path}/{tag}")
         generator_ckpt = ckpt_folder / "dac" / "weights.pth"
-        generator_dict = torch.load(generator_ckpt ,map_location="cpu")["state_dict"]
+        generator_dict = torch.load(generator_ckpt, map_location="cpu")["state_dict"]
 
         discriminator_ckpt = ckpt_folder / "discriminator" / "weights.pth"
-        discriminator_dict = torch.load(discriminator_ckpt,map_location="cpu")["state_dict"]
+        discriminator_dict = torch.load(discriminator_ckpt, map_location="cpu")[
+            "state_dict"
+        ]
         metainfo_path = ckpt_folder / "metainfo.json"
         metainfo = read_json_file(metainfo_path)
-        
+
         generator = DAC(**metainfo["DAC"])
-        generator.load_state_dict(generator_dict,strict=True)
-        
+        generator.load_state_dict(generator_dict, strict=True)
+
         discriminator = Discriminator(**metainfo["Discriminator"])
-        discriminator.load_state_dict(discriminator_dict,strict=True)
-        
+        discriminator.load_state_dict(discriminator_dict, strict=True)
+
         tracker.print(f"Resuming from {ckpt_folder}")
-        
+
         if accel.local_rank == 0:
             ema_generator_ckpt = ckpt_folder / "dac" / "ema_state_dict.pth"
             if ema_generator_ckpt.exists():
-                ema_generator_dict = torch.load(ema_generator_ckpt ,map_location="cpu")
+                ema_generator_dict = torch.load(ema_generator_ckpt, map_location="cpu")
                 ema_generator = EMA(generator, include_online_model=False)
-                ema_generator.load_state_dict(ema_generator_dict,strict=True)
+                ema_generator.load_state_dict(ema_generator_dict, strict=True)
                 tracker.print(f"Resume load ema_generator from {ema_generator_ckpt}")
 
     generator = DAC() if generator is None else generator
     discriminator = Discriminator() if discriminator is None else discriminator
-    
+
     if accel.local_rank == 0:
-        ema_generator = EMA(generator, include_online_model=False) if ema_generator is None else ema_generator
+        ema_generator = (
+            EMA(generator, include_online_model=False)
+            if ema_generator is None
+            else ema_generator
+        )
         ema_generator.to(accel.device)
-    
+
     tracker.print(f"[Encoder] Parameters: {count_parameters(generator.encoder):,}")
     tracker.print(f"[Decoder] Parameters: {count_parameters(generator.decoder):,}")
     tracker.print(f"[Total] Parameters: {count_parameters(generator):,}")
     tracker.print(generator)
     tracker.print(discriminator)
 
-    generator = accel.prepare_model(generator,find_unused_parameters=True)
-    discriminator = accel.prepare_model(discriminator,find_unused_parameters=True,broadcast_buffers=False)
-    
+    generator = accel.prepare_model(generator, find_unused_parameters=True)
+    discriminator = accel.prepare_model(
+        discriminator, find_unused_parameters=True, broadcast_buffers=False
+    )
+
     for name, param in generator.named_parameters():
         if not param.requires_grad:
             tracker.print(f"Unused parameter in generator: {name}")
@@ -208,42 +229,50 @@ def load(
         optimizer_d = AdamW(discriminator.parameters(), use_zero=accel.use_ddp)
         scheduler_d = ExponentialLR(optimizer_d)
 
-    if resume: 
-        optimizer_g_path = ckpt_folder /  "dac" / "optimizer.pth"
+    if resume:
+        optimizer_g_path = ckpt_folder / "dac" / "optimizer.pth"
         if optimizer_g_path.exists():
-            optimizer_g.load_state_dict(torch.load(optimizer_g_path,map_location="cpu"))
+            optimizer_g.load_state_dict(
+                torch.load(optimizer_g_path, map_location="cpu")
+            )
             tracker.print(f"Resume load optimizer_g from {optimizer_g_path}")
-        
-        scheduler_g_path = ckpt_folder /  "dac" / "scheduler.pth"
+
+        scheduler_g_path = ckpt_folder / "dac" / "scheduler.pth"
         if scheduler_g_path.exists():
-            scheduler_g.load_state_dict(torch.load(scheduler_g_path,map_location="cpu"))
+            scheduler_g.load_state_dict(
+                torch.load(scheduler_g_path, map_location="cpu")
+            )
             tracker.print(f"Resume load scheduler_g from {scheduler_g_path}")
-        
-        tracker_path = ckpt_folder /  "dac" / "tracker.pth"
-        tracker.load_state_dict(torch.load(tracker_path,map_location="cpu"))
+
+        tracker_path = ckpt_folder / "dac" / "tracker.pth"
+        tracker.load_state_dict(torch.load(tracker_path, map_location="cpu"))
         tracker.print(f"Resume load tracker from {tracker_path}")
-        
-        optimizer_d_path = ckpt_folder /  "discriminator" / "optimizer.pth"
+
+        optimizer_d_path = ckpt_folder / "discriminator" / "optimizer.pth"
         if optimizer_d_path.exists():
-            optimizer_d.load_state_dict(torch.load(optimizer_d_path,map_location="cpu"))
+            optimizer_d.load_state_dict(
+                torch.load(optimizer_d_path, map_location="cpu")
+            )
             tracker.print(f"Resume load optimizer_d from {optimizer_d_path}")
-        
-        scheduler_d_path = ckpt_folder /  "discriminator" / "scheduler.pth"
+
+        scheduler_d_path = ckpt_folder / "discriminator" / "scheduler.pth"
         if scheduler_d_path.exists():
-            scheduler_d.load_state_dict(torch.load(scheduler_d_path,map_location="cpu"))
+            scheduler_d.load_state_dict(
+                torch.load(scheduler_d_path, map_location="cpu")
+            )
             tracker.print(f"Resume load scheduler_d from {scheduler_d_path}")
 
     sample_rate = accel.unwrap(generator).sample_rate
     with argbind.scope(args, "train"):
         train_data = build_dataset(sample_rate)
         tracker.print(f"[Train Dataset] Total samples: {len(train_data)}")
-        if hasattr(train_data, 'datasets'):  # 如果是ConcatDataset
+        if hasattr(train_data, "datasets"):  # 如果是ConcatDataset
             for i, ds in enumerate(train_data.datasets):
                 tracker.print(f"  Subset {i+1}: {len(ds)} samples")
     with argbind.scope(args, "val"):
         val_data = build_dataset(sample_rate)
         tracker.print(f"[Val Dataset] Total samples: {len(val_data)}")
-        if hasattr(val_data, 'datasets'):
+        if hasattr(val_data, "datasets"):
             for i, ds in enumerate(val_data.datasets):
                 tracker.print(f"  Subset {i+1}: {len(ds)} samples")
 
@@ -303,7 +332,7 @@ def train_loop(state, batch, accel, lambdas, current_step, disc_warmup_step=5000
         )
 
     with accel.autocast():
-        out = state.generator(signal.audio_data, signal.sample_rate,batch["guidance"])
+        out = state.generator(signal.audio_data, signal.sample_rate, batch["guidance"])
         recons = AudioSignal(out["audio"], signal.sample_rate)
         kl_loss = out["vae/kl_loss"]
         proj_loss = out["vae/proj_loss"]
@@ -332,7 +361,7 @@ def train_loop(state, batch, accel, lambdas, current_step, disc_warmup_step=5000
             output["adv/gen_loss"],
             output["adv/feat_loss"],
         ) = state.gan_loss.generator_loss(recons, signal)
-        
+
         output["vae/kl_loss"] = kl_loss
         output["vae/proj_loss"] = proj_loss
         output["loss"] = sum([v * output[k] for k, v in lambdas.items() if k in output])
@@ -341,12 +370,12 @@ def train_loop(state, batch, accel, lambdas, current_step, disc_warmup_step=5000
     accel.backward(output["loss"])
     accel.scaler.unscale_(state.optimizer_g)
     output["other/grad_norm"] = torch.nn.utils.clip_grad_norm_(
-        state.generator.parameters(), 10 # 1e3?
+        state.generator.parameters(), 10  # 1e3?
     )
     accel.step(state.optimizer_g)
     state.scheduler_g.step()
     accel.update()
-    
+
     # Update EMA weights
     if accel.local_rank == 0:
         state.ema_generator.update()
@@ -373,17 +402,17 @@ def checkpoint(state, save_iters, save_path):
             "tracker.pth": state.tracker.state_dict(),
             "ema_state_dict.pth": state.ema_generator.state_dict(),
         }
-            
+
         accel.unwrap(state.generator).metadata = metainfo
         accel.unwrap(state.generator).save_to_folder(
-            f"{save_path}/{tag}", generator_extra,package=False
+            f"{save_path}/{tag}", generator_extra, package=False
         )
         discriminator_extra = {
             "optimizer.pth": state.optimizer_d.state_dict(),
             "scheduler.pth": state.scheduler_d.state_dict(),
         }
         accel.unwrap(state.discriminator).save_to_folder(
-            f"{save_path}/{tag}", discriminator_extra,package=False
+            f"{save_path}/{tag}", discriminator_extra, package=False
         )
         save_metainfo(f"{save_path}/{tag}")
 
@@ -423,23 +452,26 @@ def validate(state, val_dataloader, accel):
         state.optimizer_d.consolidate_state_dict()
     return output
 
+
 def count_parameters(module):
     return sum(p.numel() for p in module.parameters() if p.requires_grad)
 
+
 def kl_warmup_func(
-    kl_start_weight: float, 
-    kl_end_weight: float, 
-    total_warmup_steps: int, 
-    current_step: int
+    kl_start_weight: float,
+    kl_end_weight: float,
+    total_warmup_steps: int,
+    current_step: int,
 ) -> float:
     if current_step >= total_warmup_steps:
-        return kl_end_weight 
-    
+        return kl_end_weight
+
     warmup_freq = int(total_warmup_steps / 4)
-    stage = min(current_step // warmup_freq, 3) 
+    stage = min(current_step // warmup_freq, 3)
     update_kl = (kl_end_weight - kl_start_weight) / 4
     current_weight = kl_start_weight + (stage + 1) * update_kl
-    return min(current_weight, kl_end_weight) 
+    return min(current_weight, kl_end_weight)
+
 
 @argbind.bind(without_prefix=True)
 def train(
@@ -459,12 +491,12 @@ def train(
         "mel/loss": 100.0,
         "adv/feat_loss": 2.0,
         "adv/gen_loss": 1.0,
-        "vae/kl_loss": 1.0
+        "vae/kl_loss": 1.0,
     },
     use_kl_warmup: bool = False,
     kl_warmup_ratio: float = 0.25,
     kl_start_weight: float = 5e-5,
-    disc_warmup_step: int = 5000
+    disc_warmup_step: int = 5000,
 ):
     util.seed(seed)
     Path(save_path).mkdir(exist_ok=True, parents=True)
@@ -513,14 +545,21 @@ def train(
         state.tracker.print(f"KL start weight: {kl_start_weight}")
         state.tracker.print(f"KL end weight: {kl_end_weight}")
         state.tracker.print(f"KL warmup steps: {total_warmup_steps}")
-        
+
     with tracker.live:
         for tracker.step, batch in enumerate(train_dataloader, start=tracker.step):
             if use_kl_warmup:
                 lambdas["vae/kl_loss"] = kl_warmup_func(
                     kl_start_weight, kl_end_weight, total_warmup_steps, tracker.step
-                )        
-            train_loop(state, batch, accel, lambdas, current_step=tracker.step,disc_warmup_step=disc_warmup_step)
+                )
+            train_loop(
+                state,
+                batch,
+                accel,
+                lambdas,
+                current_step=tracker.step,
+                disc_warmup_step=disc_warmup_step,
+            )
 
             last_iter = (
                 tracker.step == num_iters - 1 if num_iters is not None else False

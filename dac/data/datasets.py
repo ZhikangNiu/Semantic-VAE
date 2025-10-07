@@ -4,14 +4,17 @@ from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Union
+
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
+from audiotools.core import AudioSignal
+from audiotools.core import util
 from torch.utils.data import SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
-from audiotools.core import util, AudioSignal
 
 AUDIO_EXTENSIONS = [".wav", ".flac", ".mp3", ".mp4"]
+
 
 def read_sources(
     sources: List[str],
@@ -75,12 +78,10 @@ class AudioLoader:
         ext: List[str] = util.AUDIO_EXTENSIONS,
         shuffle: bool = True,
         shuffle_state: int = 0,
-        guidance_frame_rate: int = 50, # SSL feature frame rate
+        guidance_frame_rate: int = 50,  # SSL feature frame rate
     ):
-        self.audio_lists = read_sources(
-            sources, relative_path=relative_path, ext=ext
-        )
-        
+        self.audio_lists = read_sources(sources, relative_path=relative_path, ext=ext)
+
         self.audio_indices = [
             (src_idx, item_idx)
             for src_idx, src in enumerate(self.audio_lists)
@@ -107,7 +108,7 @@ class AudioLoader:
         item_idx: int = None,
         global_idx: int = None,
         guidance_path: str = None,
-        guidance_dim: int = 1024
+        guidance_dim: int = 1024,
     ):
         if source_idx is not None and item_idx is not None:
             try:
@@ -128,8 +129,12 @@ class AudioLoader:
 
         signal = AudioSignal.zeros(duration, sample_rate, num_channels)
         try:
-            relative_path = Path(path).relative_to(self.sources[source_idx]).with_suffix(".npy")
-            guidance = torch.zeros((int(duration * self.guidance_frame_rate) ,guidance_dim))
+            relative_path = (
+                Path(path).relative_to(self.sources[source_idx]).with_suffix(".npy")
+            )
+            guidance = torch.zeros(
+                (int(duration * self.guidance_frame_rate), guidance_dim)
+            )
             if guidance_path is not None:
                 guidance_real_path = guidance_path[source_idx] / relative_path
                 if Path(guidance_real_path).exists():
@@ -141,7 +146,7 @@ class AudioLoader:
                         duration=duration,
                         state=state,
                         loudness_cutoff=loudness_cutoff,
-                    ) #会返回offset
+                    )  # 会返回offset
                 else:
                     signal = AudioSignal(
                         path,
@@ -151,25 +156,27 @@ class AudioLoader:
             if num_channels == 1:
                 signal = signal.to_mono()
             signal = signal.resample(sample_rate)
-            
+
             offset_seconds = signal.metadata["offset"]
             start_frame = int(offset_seconds * self.guidance_frame_rate)
             end_frame = int(start_frame + duration * self.guidance_frame_rate)
-            guidance = guidance[start_frame:end_frame,:] # guidance shape [T, D], hubert large dim = 1024
-            
+            guidance = guidance[
+                start_frame:end_frame, :
+            ]  # guidance shape [T, D], hubert large dim = 1024
+
             if signal.duration < duration:
                 signal = signal.zero_pad_to(int(duration * sample_rate))
 
-            padding_length = int(duration) * self.guidance_frame_rate - guidance.shape[0]
-            guidance = F.pad(
-                guidance,
-                (0, 0, 0, padding_length),
-                value = 0
+            padding_length = (
+                int(duration) * self.guidance_frame_rate - guidance.shape[0]
             )
+            guidance = F.pad(guidance, (0, 0, 0, padding_length), value=0)
         except:
-            guidance = torch.zeros((int(duration * self.guidance_frame_rate) ,guidance_dim))
+            guidance = torch.zeros(
+                (int(duration * self.guidance_frame_rate), guidance_dim)
+            )
             signal = AudioSignal.zeros(duration, sample_rate, num_channels)
-        
+
         for k, v in audio_info.items():
             signal.metadata[k] = v
 
@@ -422,7 +429,7 @@ class AudioDataset:
         shuffle_loaders: bool = False,
         matcher: Callable = default_matcher,
         without_replacement: bool = True,
-        guidance_path: List = None
+        guidance_path: List = None,
     ):
         # Internally we convert loaders to a dictionary
         if isinstance(loaders, list):

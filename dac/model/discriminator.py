@@ -1,8 +1,9 @@
+import typing as tp
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-import typing as tp
 from audiotools import AudioSignal
 from audiotools import ml
 from audiotools import STFTParams
@@ -25,14 +26,30 @@ def WNConv2d(*args, **kwargs):
         return conv
     return nn.Sequential(conv, nn.LeakyReLU(0.1))
 
-def get_2d_padding(kernel_size, dilation = (1, 1)):
-    return (((kernel_size[0] - 1) * dilation[0]) // 2, ((kernel_size[1] - 1) * dilation[1]) // 2)
+
+def get_2d_padding(kernel_size, dilation=(1, 1)):
+    return (
+        ((kernel_size[0] - 1) * dilation[0]) // 2,
+        ((kernel_size[1] - 1) * dilation[1]) // 2,
+    )
+
 
 class DiscriminatorSTFT(nn.Module):
-    def __init__(self, filters: int = 32, in_channels: int = 1, out_channels: int = 1,
-                 n_fft: int = 1024, hop_length: int = 256, win_length: int = 1024, max_filters: int = 1024,
-                 filters_scale: int = 1, kernel_size: tp.Tuple[int, int] = (3, 9), dilations: tp.List = [1, 2, 4],
-                 stride: tp.Tuple[int, int] = (1, 2), normalized: bool = True):
+    def __init__(
+        self,
+        filters: int = 32,
+        in_channels: int = 1,
+        out_channels: int = 1,
+        n_fft: int = 1024,
+        hop_length: int = 256,
+        win_length: int = 1024,
+        max_filters: int = 1024,
+        filters_scale: int = 1,
+        kernel_size: tp.Tuple[int, int] = (3, 9),
+        dilations: tp.List = [1, 2, 4],
+        stride: tp.Tuple[int, int] = (1, 2),
+        normalized: bool = True,
+    ):
         super().__init__()
         assert len(kernel_size) == 2
         assert len(stride) == 2
@@ -44,37 +61,69 @@ class DiscriminatorSTFT(nn.Module):
         self.win_length = win_length
         self.normalized = normalized
         self.spec_transform = torchaudio.transforms.Spectrogram(
-            n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length, window_fn=torch.hann_window,
-            normalized=self.normalized, center=False, pad_mode=None, power=None)
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window_fn=torch.hann_window,
+            normalized=self.normalized,
+            center=False,
+            pad_mode=None,
+            power=None,
+        )
         spec_channels = 2 * self.in_channels
         self.convs = nn.ModuleList()
         self.convs.append(
-            WNConv2d(spec_channels, self.filters, kernel_size=kernel_size, padding=get_2d_padding(kernel_size))
+            WNConv2d(
+                spec_channels,
+                self.filters,
+                kernel_size=kernel_size,
+                padding=get_2d_padding(kernel_size),
+            )
         )
         in_chs = min(filters_scale * self.filters, max_filters)
         for i, dilation in enumerate(dilations):
             out_chs = min((filters_scale ** (i + 1)) * self.filters, max_filters)
-            self.convs.append(WNConv2d(in_chs, out_chs, kernel_size=kernel_size, stride=stride,
-                                         dilation=(dilation, 1), padding=get_2d_padding(kernel_size, (dilation, 1))))
+            self.convs.append(
+                WNConv2d(
+                    in_chs,
+                    out_chs,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    dilation=(dilation, 1),
+                    padding=get_2d_padding(kernel_size, (dilation, 1)),
+                )
+            )
             in_chs = out_chs
-        out_chs = min((filters_scale ** (len(dilations) + 1)) * self.filters, max_filters)
-        self.convs.append(WNConv2d(in_chs, out_chs, kernel_size=(kernel_size[0], kernel_size[0]),
-                                     padding=get_2d_padding((kernel_size[0], kernel_size[0]))))
-        self.conv_post = WNConv2d(out_chs, self.out_channels,
-                                    kernel_size=(kernel_size[0], kernel_size[0]),
-                                    padding=get_2d_padding((kernel_size[0], kernel_size[0])))
+        out_chs = min(
+            (filters_scale ** (len(dilations) + 1)) * self.filters, max_filters
+        )
+        self.convs.append(
+            WNConv2d(
+                in_chs,
+                out_chs,
+                kernel_size=(kernel_size[0], kernel_size[0]),
+                padding=get_2d_padding((kernel_size[0], kernel_size[0])),
+            )
+        )
+        self.conv_post = WNConv2d(
+            out_chs,
+            self.out_channels,
+            kernel_size=(kernel_size[0], kernel_size[0]),
+            padding=get_2d_padding((kernel_size[0], kernel_size[0])),
+        )
 
     def forward(self, x: torch.Tensor):
         fmap = []
         z = self.spec_transform(x)  # [B, 2, Freq, Frames, 2]
         z = torch.cat([z.real, z.imag], dim=1)
-        z = rearrange(z, 'b c w t -> b c t w')
+        z = rearrange(z, "b c w t -> b c t w")
         for i, layer in enumerate(self.convs):
             z = layer(z)
             fmap.append(z)
         z = self.conv_post(z)
         fmap.append(z)
-        return fmap    
+        return fmap
+
 
 class MPD(nn.Module):
     def __init__(self, period):
@@ -232,7 +281,7 @@ class Discriminator(ml.BaseModel):
         fft_sizes: list = [2048, 1024, 512],
         sample_rate: int = 44100,
         bands: list = BANDS,
-        use_msstft_replace_mrd: bool = False
+        use_msstft_replace_mrd: bool = False,
     ):
         """Discriminator that combines multiple discriminators.
 
@@ -255,7 +304,10 @@ class Discriminator(ml.BaseModel):
         discs += [MPD(p) for p in periods]
         discs += [MSD(r, sample_rate=sample_rate) for r in rates]
         if use_msstft_replace_mrd:
-            discs += [DiscriminatorSTFT(n_fft=f, hop_length=f//4, win_length=f) for f in fft_sizes]
+            discs += [
+                DiscriminatorSTFT(n_fft=f, hop_length=f // 4, win_length=f)
+                for f in fft_sizes
+            ]
         else:
             discs += [MRD(f, sample_rate=sample_rate, bands=bands) for f in fft_sizes]
         self.discriminators = nn.ModuleList(discs)

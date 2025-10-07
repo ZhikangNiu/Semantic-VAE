@@ -1,15 +1,20 @@
+import argparse
 import json
 from pathlib import Path
-import argparse
+
 import numpy as np
 import torch
 import torch.distributed as dist
 from audiotools import AudioSignal
 from audiotools.core import util
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 from train import DAC
+
+from dac.model.utils import read_json_file
+
 
 class AudioPathDataset(Dataset):
     def __init__(self, input_dir):
@@ -25,12 +30,6 @@ class AudioPathDataset(Dataset):
         return str(file_path), str(relative_path)
 
 
-def read_json_file(metainfo_path):
-    with open(metainfo_path, "r") as f:
-        data = json.load(f)
-    return data
-
-
 def load_state(save_path: str, tag: str = "latest", use_ema: bool = False):
     folder = f"{save_path}/{tag}"
     print(f"Resuming from {str(Path('.').absolute())}/{folder}")
@@ -39,12 +38,18 @@ def load_state(save_path: str, tag: str = "latest", use_ema: bool = False):
     if not use_ema:
         ckpt_path = Path(folder) / "dac" / "weights.pth"
         model_dict = torch.load(ckpt_path, map_location="cpu")
-        filter_dict = {k: v for k, v in model_dict["state_dict"].items() if not k.startswith("projectors")}
+        filter_dict = {
+            k: v
+            for k, v in model_dict["state_dict"].items()
+            if not k.startswith("projectors")
+        }
     else:
         ckpt_path = Path(folder) / "dac" / "ema_state_dict.pth"
         model_dict = torch.load(ckpt_path, map_location="cpu")
         ckpt_dict = {k.replace("ema_model.", ""): v for k, v in model_dict.items()}
-        filter_dict = {k: v for k, v in ckpt_dict.items() if not k.startswith("projectors")}
+        filter_dict = {
+            k: v for k, v in ckpt_dict.items() if not k.startswith("projectors")
+        }
     print(f"Load from {ckpt_path}, use_ema: {use_ema}")
     generator = DAC(**metainfo["DAC"])
     del generator.projectors
@@ -65,7 +70,14 @@ def process(signal, generator):
 
 
 @torch.no_grad()
-def get_samples(ckpt_dir: str, input_dir: str, output_dir: str, model_tag: str, global_seed: int, use_ema: bool):
+def get_samples(
+    ckpt_dir: str,
+    input_dir: str,
+    output_dir: str,
+    model_tag: str,
+    global_seed: int,
+    use_ema: bool,
+):
     dist.init_process_group("nccl")
     world_size = dist.get_world_size()
     rank = dist.get_rank()
@@ -73,11 +85,21 @@ def get_samples(ckpt_dir: str, input_dir: str, output_dir: str, model_tag: str, 
     seed = global_seed * world_size + rank
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
-    generator = load_state(save_path=ckpt_dir, tag=model_tag, use_ema=use_ema).to(device)
+    generator = load_state(save_path=ckpt_dir, tag=model_tag, use_ema=use_ema).to(
+        device
+    )
     generator.eval()
     dataset = AudioPathDataset(input_dir)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
-    loader = DataLoader(dataset, batch_size=1, shuffle=False, sampler=sampler, num_workers=8, pin_memory=True, drop_last=False)
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        sampler=sampler,
+        num_workers=8,
+        pin_memory=True,
+        drop_last=False,
+    )
     if rank == 0:
         print(f"Generator SR = {generator.sample_rate}")
         output_dir = Path(output_dir)

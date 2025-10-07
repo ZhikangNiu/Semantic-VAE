@@ -1,7 +1,6 @@
 """
 Script for extracting SSL features (e.g., Hubert) using PyTorch DDP.
 """
-
 import argparse
 import logging
 import os
@@ -13,9 +12,11 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torchaudio
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
-from transformers import AutoFeatureExtractor, AutoModel
+from transformers import AutoFeatureExtractor
+from transformers import AutoModel
 
 
 #################################################################################
@@ -32,7 +33,10 @@ def create_logger(logging_dir, rank):
             level=logging.INFO,
             format="[\033[34m%(asctime)s\033[0m][Rank {}] %(message)s".format(rank),
             datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler(f"{logging_dir}/log_rank{rank}.txt")],
+            handlers=[
+                logging.StreamHandler(sys.stdout),
+                logging.FileHandler(f"{logging_dir}/log_rank{rank}.txt"),
+            ],
         )
         logger = logging.getLogger(__name__)
     else:  # Other processes can also log to their own files or be simpler
@@ -40,7 +44,9 @@ def create_logger(logging_dir, rank):
             level=logging.INFO,
             format="[\033[34m%(asctime)s\033[0m][Rank {}] %(message)s".format(rank),
             datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[logging.FileHandler(f"{logging_dir}/log_rank{rank}.txt")],  # Log to file only
+            handlers=[
+                logging.FileHandler(f"{logging_dir}/log_rank{rank}.txt")
+            ],  # Log to file only
         )
         logger = logging.getLogger(__name__)
     return logger
@@ -73,7 +79,9 @@ def main(args):
     """
     Extracts SSL features.
     """
-    assert torch.cuda.is_available(), "Feature extraction currently requires at least one GPU."
+    assert (
+        torch.cuda.is_available()
+    ), "Feature extraction currently requires at least one GPU."
 
     # Setup DDP:
     dist.init_process_group("nccl")
@@ -98,7 +106,9 @@ def main(args):
     dist.barrier()  # Ensure directory is created before other ranks proceed
 
     logger = create_logger(os.path.join(args.output_dir, "logs"), rank)
-    logger.info(f"Starting rank={rank}, seed={seed}, world_size={world_size}, device={device}.")
+    logger.info(
+        f"Starting rank={rank}, seed={seed}, world_size={world_size}, device={device}."
+    )
     logger.info(f"Script arguments: {args}")
 
     # Load SSL model and feature extractor:
@@ -108,7 +118,9 @@ def main(args):
         args.ssl_model_path, trust_remote_code=True
     )
     ssl_model = (
-        AutoModel.from_pretrained(args.ssl_model_path, trust_remote_code=True).eval().to(device)
+        AutoModel.from_pretrained(args.ssl_model_path, trust_remote_code=True)
+        .eval()
+        .to(device)
     )
 
     logger.info("SSL model and feature extractor loaded successfully.")
@@ -132,7 +144,9 @@ def main(args):
         drop_last=False,  # Process all files
     )
 
-    logger.info(f"Rank {rank}: Dataset size: {len(dataset)}, Sampler will process: {len(sampler)} files.")
+    logger.info(
+        f"Rank {rank}: Dataset size: {len(dataset)}, Sampler will process: {len(sampler)} files."
+    )
 
     processed_count = 0
     total_files_on_rank = len(sampler)
@@ -147,18 +161,25 @@ def main(args):
             relative_path_stem = relative_path_stems[i]
             output_feat_path = Path(args.output_dir) / relative_path_stem
             output_feat_path = output_feat_path.with_suffix(".npy")
-            
+
             if output_feat_path.exists():
                 processed_count += 1
                 if processed_count % args.log_every == 0:
                     elapsed_time = time() - start_time
-                    eta = ((elapsed_time / processed_count) * (total_files_on_rank - processed_count)) if processed_count > 0 else 0
+                    eta = (
+                        (
+                            (elapsed_time / processed_count)
+                            * (total_files_on_rank - processed_count)
+                        )
+                        if processed_count > 0
+                        else 0
+                    )
                     logger.info(
                         f"Processed {processed_count}/{total_files_on_rank} files (skipped existing). "
                         f"Last: {relative_path_stem}. ETA: {eta:.2f}s"
                     )
                 continue
-            
+
             try:
                 wav, sr = torchaudio.load(full_audio_path)
                 if sr != args.sample_rate:
@@ -172,7 +193,9 @@ def main(args):
                     wav = wav.unsqueeze(0)
 
                 input_values = feature_extractor(
-                    wav.squeeze(0).numpy(),  # Squeeze to 1D array, convert to numpy as some extractors prefer
+                    wav.squeeze(
+                        0
+                    ).numpy(),  # Squeeze to 1D array, convert to numpy as some extractors prefer
                     sampling_rate=args.sample_rate,
                     return_tensors="pt",
                 ).input_values.to(device)
@@ -185,7 +208,9 @@ def main(args):
                 # If you need a specific layer, access ssl_output.hidden_states[layer_index]
                 if args.layer_index == -1:  # last_hidden_state
                     representation = ssl_output.last_hidden_state
-                elif args.layer_index >= 0 and args.layer_index < len(ssl_output.hidden_states):
+                elif args.layer_index >= 0 and args.layer_index < len(
+                    ssl_output.hidden_states
+                ):
                     representation = ssl_output.hidden_states[args.layer_index]
                 else:
                     logger.error(
@@ -193,10 +218,12 @@ def main(args):
                     )
                     representation = ssl_output.last_hidden_state
 
-                representation = representation.squeeze(0)  # (1, Seq, Dim) -> (Seq, Dim)
-                assert len(representation.shape) == 2, (
-                    f"Expected 2D tensor, got {representation.shape} for {full_audio_path}"
-                )
+                representation = representation.squeeze(
+                    0
+                )  # (1, Seq, Dim) -> (Seq, Dim)
+                assert (
+                    len(representation.shape) == 2
+                ), f"Expected 2D tensor, got {representation.shape} for {full_audio_path}"
 
                 # Define output path for the feature
                 # e.g., output_dir/speaker_id/chapter_id/filename_stem.npy
@@ -212,7 +239,8 @@ def main(args):
                 if processed_count % args.log_every == 0:
                     elapsed_time = time() - start_time
                     eta = (
-                        (elapsed_time / processed_count) * (total_files_on_rank - processed_count)
+                        (elapsed_time / processed_count)
+                        * (total_files_on_rank - processed_count)
                         if processed_count > 0
                         else 0
                     )
@@ -224,7 +252,12 @@ def main(args):
             except Exception as e:
                 logger.error(f"Error processing {full_audio_path}: {e}")
                 # Optionally, save a list of failed files
-                with open(os.path.join(args.output_dir, "logs", f"failed_files_rank{rank}.txt"), "a") as f_err:
+                with open(
+                    os.path.join(
+                        args.output_dir, "logs", f"failed_files_rank{rank}.txt"
+                    ),
+                    "a",
+                ) as f_err:
                     f_err.write(f"{full_audio_path}\t{e}\n")
                 continue  # Skip to the next file
 
@@ -241,7 +274,10 @@ if __name__ == "__main__":
         help="Root directory where audio files listed in data-list-path are located.",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="extracted_features", help="Directory to save extracted features and logs."
+        "--output-dir",
+        type=str,
+        default="extracted_features",
+        help="Directory to save extracted features and logs.",
     )
     parser.add_argument(
         "--ssl-model-path",
@@ -256,15 +292,32 @@ if __name__ == "__main__":
         help="Which layer's hidden state to extract. -1 for last_hidden_state. "
         "0 for the first layer of hidden_states, etc.",
     )
-    parser.add_argument("--sample-rate", type=int, default=16000, help="Target sample rate for audio processing.")
     parser.add_argument(
-        "--file-extension", type=str, default=".flac", help="Audio file extension (e.g., .wav, .flac, .mp3)."
+        "--sample-rate",
+        type=int,
+        default=16000,
+        help="Target sample rate for audio processing.",
+    )
+    parser.add_argument(
+        "--file-extension",
+        type=str,
+        default=".flac",
+        help="Audio file extension (e.g., .wav, .flac, .mp3).",
     )
 
     # DDP / Performance related arguments
-    parser.add_argument("--global-seed", type=int, default=42, help="Global seed for reproducibility.")
-    parser.add_argument("--num-workers", type=int, default=4, help="Number of data loading workers per GPU.")
-    parser.add_argument("--log-every", type=int, default=100, help="Log progress every N files.")
+    parser.add_argument(
+        "--global-seed", type=int, default=42, help="Global seed for reproducibility."
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="Number of data loading workers per GPU.",
+    )
+    parser.add_argument(
+        "--log-every", type=int, default=100, help="Log progress every N files."
+    )
 
     args = parser.parse_args()
     main(args)

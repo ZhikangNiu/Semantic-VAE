@@ -1,18 +1,22 @@
+import argparse
 import json
 from pathlib import Path
 
-import argparse
 import numpy as np
 import torch
 import torch.distributed as dist
+import torchaudio
 from audiotools import AudioSignal
 from audiotools.core import util
-from torch.utils.data import DataLoader, Dataset
+from extract_latent import load_state
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 from train import DAC
-import torchaudio
-from extract_latent import read_json_file, load_state
+
+from dac.model.utils import read_json_file
+
 
 # Custom Dataset for audio file paths
 class LatentPathDataset(Dataset):
@@ -27,11 +31,13 @@ class LatentPathDataset(Dataset):
         file_path = self.file_lines[idx]
         return str(file_path)
 
+
 @torch.no_grad()
-def recon_wav_from_latent(latent_data,generator):
+def recon_wav_from_latent(latent_data, generator):
     z_hat = torch.from_numpy(latent_data).cuda()
-    final_result = generator.decode(z_hat.transpose(1,2))
+    final_result = generator.decode(z_hat.transpose(1, 2))
     return final_result
+
 
 @torch.no_grad()
 def recon_samples(
@@ -39,7 +45,7 @@ def recon_samples(
     input_dir: str = "samples/input",
     model_tag: str = "best",
     global_seed: int = 42,
-    use_ema: bool = False
+    use_ema: bool = False,
 ):
     # Setup DDP:
     dist.init_process_group("nccl")
@@ -55,12 +61,10 @@ def recon_samples(
     seed = global_seed * world_size + rank
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
-    
-    generator = load_state(
-        save_path=ckpt_dir,
-        tag=model_tag,
-        use_ema=use_ema
-    ).to(device)
+
+    generator = load_state(save_path=ckpt_dir, tag=model_tag, use_ema=use_ema).to(
+        device
+    )
     generator.eval()
 
     dataset = LatentPathDataset(input_dir)
@@ -74,16 +78,19 @@ def recon_samples(
         pin_memory=True,
         drop_last=False,  # Process all files
     )
-    
+
     for file_path in tqdm(loader):
         output_audio = Path(file_path[0]).with_suffix(".wav")
         if output_audio.exists():
             continue
         latent = np.load(file_path[0])
-        recon = recon_wav_from_latent(latent,generator)
-        torchaudio.save(output_audio,recon.squeeze(0).cpu(),sample_rate=generator.sample_rate)
+        recon = recon_wav_from_latent(latent, generator)
+        torchaudio.save(
+            output_audio, recon.squeeze(0).cpu(), sample_rate=generator.sample_rate
+        )
 
     dist.destroy_process_group()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -76,7 +76,7 @@ MelSpectrogramLoss.mag_weight: 0.0
 batch_size: 24
 train/AudioDataset.duration: 3.0
 train/AudioDataset.n_examples: 10000000
-train/AudioDataset.guidance_path: 
+train/AudioDataset.guidance_path:
   - <YOUR_PATH>/libritts/wavlm-features/dev-clean # SSL features path
 
 val/AudioDataset.duration: 5.0
@@ -101,4 +101,3 @@ val/build_dataset.folders:
 test/build_dataset.folders:
   speech:
     - <YOUR_PATH>/libritts/v1/test-clean
-

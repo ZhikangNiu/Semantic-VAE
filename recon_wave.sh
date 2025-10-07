@@ -16,4 +16,3 @@ scripts/recon_latent_to_wave.py \
 --input_dir $npy_root \
 --model_tag $tag \
 --use_ema
-

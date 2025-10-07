@@ -1,10 +1,10 @@
 # Adapted from https://github.com/junjun3518/alias-free-torch under the Apache License 2.0
 #   LICENSE is in incl_licenses directory.
-
 import torch.nn as nn
 from torch.nn import functional as F
-from dac.model.alias_free_activation.torch.filter import LowPassFilter1d
+
 from dac.model.alias_free_activation.torch.filter import kaiser_sinc_filter1d
+from dac.model.alias_free_activation.torch.filter import LowPassFilter1d
 
 
 class UpSample1d(nn.Module):
