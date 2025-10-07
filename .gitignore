@@ -178,6 +178,7 @@ archived/
 *_remote_module_*
 *.zip
 *.pth
-encoded_out/
-recon/
-recons/
+
+!ckpts/
+!ckpts/**/
+!ckpts/**/.gitkeep
