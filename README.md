@@ -82,10 +82,9 @@ If you want to train your custom VAE, simply modify the `conf/svae/example.yml` 
 torchrun --nproc_per_node 8 scripts/train.py --args.load custom_yml_path
 ```
 
-### 4. Infer the model
 ### 4. Run Inference
 
-You can follow the example in [`examples/example.py`](examples/example.py) to reconstruct audio using the pretrained model.
+You can download the model and follow the example in [`examples/example.py`](examples/example.py) to reconstruct audio using the pretrained model.
 
 For multi-GPU processing, we also provide two utility scripts:
 
