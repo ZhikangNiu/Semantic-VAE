@@ -1,8 +1,65 @@
 import json
+import random
+from pathlib import Path
+from typing import Union
 
+import numpy as np
 import torch
+from flatten_dict import flatten
+from flatten_dict import unflatten
 from scipy.io.wavfile import write
 from torch.nn.utils.parametrizations import weight_norm
+
+
+def prepare_batch(batch: Union[dict, list, torch.Tensor], device: str = "cpu"):
+    if isinstance(batch, dict):
+        batch = flatten(batch)
+        for key, val in batch.items():
+            try:
+                batch[key] = val.to(device)
+            except:
+                pass
+        batch = unflatten(batch)
+    elif torch.is_tensor(batch):
+        batch = batch.to(device)
+    elif isinstance(batch, list):
+        for i in range(len(batch)):
+            try:
+                batch[i] = batch[i].to(device)
+            except:
+                pass
+    return batch
+
+
+def set_seed(random_seed, set_cudnn=False):
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+
+    if set_cudnn:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def save_to_folder(
+    model,
+    folder: Union[str, Path],
+    extra_data: dict | None = None,
+) -> Path:
+    extra_data = {} if extra_data is None else extra_data
+    model_name = type(model).__name__.lower()
+    target_base = Path(folder) / model_name
+    target_base.mkdir(parents=True, exist_ok=True)
+
+    # 仅保存权重（不含元数据）
+    weights_path = target_base / "weights.pth"
+    torch.save(model.state_dict(), weights_path)
+
+    # 保存额外数据
+    for rel_path, obj in extra_data.items():
+        torch.save(obj, target_base / rel_path)
+
+    return target_base
 
 
 def read_json_file(metainfo_path):

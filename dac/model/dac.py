@@ -6,8 +6,6 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-from audiotools import AudioSignal
-from audiotools.ml import BaseModel
 from torch import nn
 
 from .attn_proj import AttnProjection
@@ -92,7 +90,7 @@ class Encoder(nn.Module):
         return self.block(x)
 
 
-class DAC(BaseModel, CodecMixin):
+class DAC(nn.Module, CodecMixin):
     def __init__(
         self,
         encoder_dim: int = 64,

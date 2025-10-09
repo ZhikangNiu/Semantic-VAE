@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,11 +10,8 @@ import argbind
 import torch
 from audiotools import AudioSignal
 from audiotools import ml
-from audiotools.core import util
 from audiotools.data import transforms
-from audiotools.ml.decorators import timer
 from audiotools.ml.decorators import Tracker
-from audiotools.ml.decorators import when
 from ema_pytorch import EMA
 from torch.utils.tensorboard import SummaryWriter
 
@@ -21,6 +19,9 @@ import dac
 from dac.data.datasets import AudioDataset
 from dac.data.datasets import AudioLoader
 from dac.data.datasets import ConcatDataset
+from dac.model.utils import prepare_batch
+from dac.model.utils import save_to_folder
+from dac.model.utils import set_seed
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -299,11 +300,10 @@ def load(
     )
 
 
-@timer()
 @torch.no_grad()
 def val_loop(batch, state, accel):
     state.generator.eval()
-    batch = util.prepare_batch(batch, accel.device)
+    batch = prepare_batch(batch, accel.device)
     signal = state.val_data.transform(
         batch["signal"].clone(), **batch["transform_args"]
     )
@@ -319,13 +319,13 @@ def val_loop(batch, state, accel):
     }
 
 
-@timer()
 def train_loop(state, batch, accel, lambdas, current_step, disc_warmup_step=5000):
+    start_time = time.perf_counter()
     state.generator.train()
     state.discriminator.train()
     output = {}
 
-    batch = util.prepare_batch(batch, accel.device)
+    batch = prepare_batch(batch, accel.device)
     with torch.no_grad():
         signal = state.train_data.transform(
             batch["signal"].clone(), **batch["transform_args"]
@@ -382,6 +382,7 @@ def train_loop(state, batch, accel, lambdas, current_step, disc_warmup_step=5000
 
     output["other/learning_rate"] = state.optimizer_g.param_groups[0]["lr"]
     output["other/batch_size"] = signal.batch_size * accel.world_size
+    output["time/train_loop"] = time.perf_counter() - start_time
 
     return {k: v for k, v in sorted(output.items())}
 
@@ -404,15 +405,16 @@ def checkpoint(state, save_iters, save_path):
         }
 
         accel.unwrap(state.generator).metadata = metainfo
-        accel.unwrap(state.generator).save_to_folder(
-            f"{save_path}/{tag}", generator_extra, package=False
+        save_to_folder(
+            accel.unwrap(state.generator), f"{save_path}/{tag}", generator_extra
         )
         discriminator_extra = {
             "optimizer.pth": state.optimizer_d.state_dict(),
             "scheduler.pth": state.scheduler_d.state_dict(),
         }
-        accel.unwrap(state.discriminator).save_to_folder(
-            f"{save_path}/{tag}", discriminator_extra, package=False
+
+        save_to_folder(
+            accel.unwrap(state.discriminator), f"{save_path}/{tag}", discriminator_extra
         )
         save_metainfo(f"{save_path}/{tag}")
 
@@ -424,7 +426,7 @@ def save_samples(state, val_idx, writer):
 
     samples = [state.val_data[idx] for idx in val_idx]
     batch = state.val_data.collate(samples)
-    batch = util.prepare_batch(batch, accel.device)
+    batch = prepare_batch(batch, accel.device)
     signal = state.train_data.transform(
         batch["signal"].clone(), **batch["transform_args"]
     )
@@ -498,7 +500,7 @@ def train(
     kl_start_weight: float = 5e-5,
     disc_warmup_step: int = 5000,
 ):
-    util.seed(seed)
+    set_seed(seed)
     Path(save_path).mkdir(exist_ok=True, parents=True)
     writer = (
         SummaryWriter(log_dir=f"{save_path}/logs") if accel.local_rank == 0 else None
@@ -535,8 +537,8 @@ def train(
     validate = tracker.log("val", "mean")(validate)
 
     # These functions run only on the 0-rank process
-    save_samples = when(lambda: accel.local_rank == 0)(save_samples)
-    checkpoint = when(lambda: accel.local_rank == 0)(checkpoint)
+    # save_samples = when(lambda: accel.local_rank == 0)(save_samples)
+    # checkpoint = when(lambda: accel.local_rank == 0)(checkpoint)
     state.tracker.print(f"Loss weights: {lambdas}")
     state.tracker.print(f"disc warm up: {disc_warmup_step}")
     if not args["resume"] and use_kl_warmup:
@@ -565,11 +567,13 @@ def train(
                 tracker.step == num_iters - 1 if num_iters is not None else False
             )
             if tracker.step % sample_freq == 0 or last_iter:
-                save_samples(state, val_idx, writer)
+                if accel.local_rank == 0:
+                    save_samples(state, val_idx, writer)
 
             if tracker.step % valid_freq == 0 or last_iter:
                 validate(state, val_dataloader, accel)
-                checkpoint(state, save_iters, save_path)
+                if accel.local_rank == 0:
+                    checkpoint(state, save_iters, save_path)
                 # Reset validation progress bar, print summary since last validation.
                 tracker.done("val", f"Iteration {tracker.step}")
 

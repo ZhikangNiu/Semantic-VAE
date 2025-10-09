@@ -13,13 +13,14 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 from train import DAC
 
+from dac.data.datasets import find_audio
 from dac.model.utils import read_json_file
 
 
 class AudioPathDataset(Dataset):
     def __init__(self, input_dir):
         self.audio_root_dir = input_dir
-        self.file_lines = util.find_audio(input_dir)
+        self.file_lines = find_audio(input_dir)
 
     def __len__(self):
         return len(self.file_lines)

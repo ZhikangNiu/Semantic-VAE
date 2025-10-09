@@ -16,6 +16,24 @@ from torch.utils.data.distributed import DistributedSampler
 AUDIO_EXTENSIONS = [".wav", ".flac", ".mp3", ".mp4"]
 
 
+def find_audio(folder: str, ext: List[str] = AUDIO_EXTENSIONS):
+    folder = Path(folder)
+    # Take care of case where user has passed in an audio file directly
+    # into one of the calling functions.
+    if str(folder).endswith(tuple(ext)):
+        # if, however, there's a glob in the path, we need to
+        # return the glob, not the file.
+        if "*" in str(folder):
+            return glob.glob(str(folder), recursive=("**" in str(folder)))
+        else:
+            return [folder]
+
+    files = []
+    for x in ext:
+        files += folder.glob(f"**/*{x}")
+    return files
+
+
 def read_sources(
     sources: List[str],
     remove_empty: bool = True,
@@ -33,7 +51,7 @@ def read_sources(
                 for x in reader:
                     _files.append({"path": x[0]})
         else:
-            for x in util.find_audio(source, ext=ext):
+            for x in find_audio(source, ext=ext):
                 x = str(relative_path / x)
                 _files.append({"path": x})
         files.append(sorted(_files, key=lambda x: x["path"]))
@@ -75,7 +93,7 @@ class AudioLoader:
         weights: List[float] = None,
         transform: Callable = None,
         relative_path: str = "",
-        ext: List[str] = util.AUDIO_EXTENSIONS,
+        ext: List[str] = AUDIO_EXTENSIONS,
         shuffle: bool = True,
         shuffle_state: int = 0,
         guidance_frame_rate: int = 50,  # SSL feature frame rate

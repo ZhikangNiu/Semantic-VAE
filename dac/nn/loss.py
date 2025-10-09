@@ -4,8 +4,9 @@ from typing import List
 import torch
 import torch.nn.functional as F
 from audiotools import AudioSignal
-from audiotools import STFTParams
 from torch import nn
+
+from dac.model.discriminator import STFTParams
 
 
 class L1Loss(nn.L1Loss):
