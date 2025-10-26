@@ -42,6 +42,8 @@
 </div>
 
 ## 📜 News
+🚀 [2025.10] We upload Semantic-VAE 1M update steps model in [Huggingface](https://huggingface.co/zkniu/Semantic-VAE/tree/main/semantic_vae_1000k).
+
 🚀 [2025.10] We release all the code and pre-trained models(semantic-vae, acoustic-vae-dim16, and acoustic-vae-dim64) to promote the research of semantic-aligned VAE for speech synthesis after cleaning the code.
 
 ## 💡 Highlights
