@@ -6,7 +6,7 @@
 <a href="">Jeongsoo Choi<sup>4<sup></a>,
 <a href="">Yushen Chen<sup>1,2<sup></a>,
 <a href="">Peining Chen<sup>1<sup></a>,
-<a href="">Pengcheng Zhu<sup>5<sup></a>,
+<a href="">Pengcheng Zhu<sup>5<sup></a>,<br>
 <a href="">Yunting Yang<sup>5<sup></a>,
 <a href="">Bowen Zhang<sup>5<sup></a>,
 <a href="">Jian Zhao<sup>5<sup></a>,
@@ -30,6 +30,9 @@
   <a href="https://arxiv.org/abs/2509.22167">
     <img src="https://img.shields.io/badge/arXiv-2509.22167-b31b1b.svg?logo=arXiv" alt="arXiv">
   </a>
+  <a href="https://zhikangniu.github.io/semantic-vae/">
+    <img src="https://img.shields.io/badge/Demo-Page-blue?logo=github&logoColor=white" alt="Demo Page">
+  </a><br>
   <a href="https://huggingface.co/zkniu/Semantic-VAE/tree/main/semantic_vae">
     <img src="https://img.shields.io/badge/Model-semantic--vae-FF6B6B.svg?logo=HuggingFace" alt="semantic-vae">
   </a>
